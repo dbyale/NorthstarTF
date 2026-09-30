@@ -318,7 +318,7 @@ footer {
     margin: 0.25rem 0 0 0;
     padding-left: 1.5rem;
 }
-.server-details span {
+.server-details span.search-highlight {
     background: rgba(255, 255, 0, 0.2);
     font-weight: bold;
 }

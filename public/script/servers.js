@@ -206,6 +206,83 @@ function displayMod(mod) {
     return `${mod.Name} ${mod.Version}`;
 }
 
+function isHexDigitChar(c) {
+    return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+}
+
+// Parses Northstar server name color codes (^RRGGBBAA / ^RRGGBB, stripped ^<digit>) into colored segments
+function parseServerName(name) {
+    const segments = [];
+    let color = null;
+    let text = '';
+    const flush = () => {
+        if (text) {
+            segments.push({ color, text });
+            text = '';
+        }
+    };
+    for (let i = 0; i < name.length; i++) {
+        if (name[i] !== '^') {
+            text += name[i];
+            continue;
+        }
+        const rest = name.slice(i + 1);
+        let codeLen = 0;
+        for (const n of [8, 6]) {
+            if (rest.length >= n && [...rest.slice(0, n)].every(isHexDigitChar)) {
+                codeLen = n + 1;
+                break;
+            }
+        }
+        if (codeLen > 0) {
+            flush();
+            const hex = rest.slice(0, codeLen - 1);
+            color = `#${hex.slice(0, 6).toLowerCase()}ff`;
+            i += codeLen - 1;
+        } else if (rest.length >= 1 && rest[0] >= '0' && rest[0] <= '9') {
+            flush();
+            i++;
+        } else {
+            text += '^';
+        }
+    }
+    flush();
+    return segments;
+}
+
+function appendServerNameSegment($parent, segment, highlighted) {
+    const $span = document.createElement('span');
+    $span.textContent = segment.text;
+    if (highlighted) {
+        $span.classList.add('search-highlight');
+    } else if (segment.color) {
+        $span.classList.add('server-name-color');
+        $span.style.color = segment.color;
+    }
+    $parent.appendChild($span);
+}
+
+function renderServerName($parent, name, filter = '') {
+    const segments = parseServerName(name);
+    const visible = segments.map(segment => segment.text).join('');
+    const matchIndex = filter ? visible.toLowerCase().indexOf(filter.toLowerCase()) : -1;
+    let pos = 0;
+    for (const segment of segments) {
+        const segStart = pos;
+        const segEnd = pos + segment.text.length;
+        pos = segEnd;
+        if (matchIndex === -1 || matchIndex + filter.length <= segStart || matchIndex >= segEnd) {
+            appendServerNameSegment($parent, segment, false);
+        } else {
+            const localStart = Math.max(matchIndex - segStart, 0);
+            const localEnd = Math.min(matchIndex + filter.length - segStart, segEnd - segStart);
+            if (localStart > 0) appendServerNameSegment($parent, { color: segment.color, text: segment.text.slice(0, localStart) }, false);
+            appendServerNameSegment($parent, { color: null, text: segment.text.slice(localStart, localEnd) }, true);
+            if (localEnd < segment.text.length) appendServerNameSegment($parent, { color: segment.color, text: segment.text.slice(localEnd) }, false);
+        }
+    }
+}
+
 function getServerDisplayProp(server, prop) {
     switch (prop) {
         case 'playlist': return displayGamemode(server.playlist);
@@ -374,18 +451,7 @@ function uiRender() {
         const $detailsCell = document.createElement('div');
         $detailsCell.classList.add('server-details');
         const $serverName = document.createElement('h3');
-        if (currentQuery.filter !== '') {
-            const filterIndex = server.name.toLowerCase().indexOf(currentQuery.filter.toLowerCase());
-            $serverName.append(server.name.substring(0, filterIndex));
-
-            const $highlight = document.createElement('span');
-            $highlight.textContent = server.name.substring(filterIndex, filterIndex + currentQuery.filter.length);
-            $serverName.appendChild($highlight);
-
-            $serverName.append(server.name.substring(filterIndex + currentQuery.filter.length));
-        } else {
-            $serverName.textContent = server.name;
-        }
+        renderServerName($serverName, server.name, currentQuery.filter);
         $detailsCell.appendChild($serverName);
 
         const $details = document.createElement('div');
@@ -478,7 +544,7 @@ function uiRenderOverlay() {
         const $dialog = document.createElement('div');
 
         const $body = document.createElement('p');
-        $body.textContent = currentState.server.name;
+        renderServerName($body, currentState.server.name);
         $dialog.appendChild($body);
 
         const $form = document.createElement('form');
